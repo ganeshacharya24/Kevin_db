@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PGx Consult KR — Filters + Paste Import</title>
+  <style>
+    :root{ --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#38bdf8; --border:#1e293b; }
+    *{box-sizing:border-box}
+    body{margin:0; font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu; color:var(--text); background:linear-gradient(180deg,#0b1222,var(--bg));}
+    .app{display:grid; grid-template-columns:300px 1fr; min-height:100vh}
+    .sidebar{padding:18px; border-right:1px solid var(--border); background:rgba(17,24,39,.66); backdrop-filter: blur(6px);}
+    .main{padding:24px}
+    h1{margin:0 0 14px; font-size:20px}
+    .desc{color:var(--muted); font-size:13px; margin-bottom:12px}
+
+    .search{display:flex; gap:8px; margin-bottom:10px}
+    .search input{flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#0b1222; color:var(--text)}
+    .btn{border:1px solid var(--border); background:#0d1322; color:var(--text); padding:8px 10px; border-radius:10px; cursor:pointer}
+    .btn:hover{border-color:#334155}
+
+    .toolbar{display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap}
+    .filters{display:grid; gap:10px; margin-bottom:14px}
+    .filter-group{display:grid; gap:6px}
+    .filter-title{font-size:12px; color:#cbd5e1}
+    .chiplist{display:flex; flex-wrap:wrap; gap:6px}
+    .chip{padding:6px 10px; border-radius:999px; border:1px solid var(--border); background:#0b1222; color:#cbd5e1; cursor:pointer; font-size:12px}
+    .chip.active{background:var(--accent); color:#0b1222; border-color:transparent}
+    .right{margin-left:auto}
+
+    .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:14px}
+    .card{border:1px solid var(--border); border-radius:16px; overflow:hidden; background:rgba(17,24,39,.6)}
+    .card header{padding:12px 14px; display:flex; gap:8px; align-items:center; border-bottom:1px solid var(--border)}
+    .card h3{margin:0; font-size:16px; flex:1}
+    .tags{display:flex; gap:6px; flex-wrap:wrap; padding:10px 14px; border-bottom:1px solid var(--border)}
+    .tag{font-size:11px; padding:4px 8px; border-radius:999px; border:1px solid var(--border); color:#9ca3af; background:#0b1222}
+    .tag.badge{border-color:transparent; color:#0b1222; background:linear-gradient(90deg,var(--accent),#22d3ee)}
+    .content{padding:14px}
+
+    .muted{color:var(--muted)}
+    .empty{padding:24px; text-align:center; color:var(--muted); border:1px dashed var(--border); border-radius:12px}
+    dialog::backdrop{background:rgba(0,0,0,.35)}
+    textarea{width:100%; min-height:40vh; background:#0b1222; color:#e5e7eb; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+    @media (max-width:860px){.app{grid-template-columns:1fr}.sidebar{position:sticky; top:0; z-index:10}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>PGx Consult KR</h1>
+      <div class="desc">Paste your Word content and filter by phenotype, class, source, actionability, and pinned. All data is stored locally in your browser.</div>
+
+      <div class="search">
+        <input id="q" placeholder="Search by drug, gene, phenotype, text…">
+        <button class="btn" id="clearSearch">Clear</button>
+      </div>
+
+      <div class="filters" id="filters">
+        <div class="filter-group">
+          <div class="filter-title">Phenotype</div>
+          <div class="chiplist" id="phenotypeChips"></div>
+        </div>
+        <div class="filter-group">
+          <div class="filter-title">Drug class</div>
+          <div class="chiplist" id="classChips"></div>
+        </div>
+        <div class="filter-group">
+          <div class="filter-title">Source</div>
+          <div class="chiplist" id="sourceChips"></div>
+        </div>
+        <div class="filter-group">
+          <div class="filter-title">Actionability</div>
+          <div class="chiplist" id="actionChips"></div>
+        </div>
+        <div class="filter-group">
+          <div class="chiplist">
+            <button class="chip" id="pinnedChip" data-role="pinned">Pinned</button>
+            <button class="chip right" id="clearFilters">Clear filters</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="desc">Utilities</div>
+      <div class="toolbar">
+        <button class="btn" id="pasteBtn">Paste from Word</button>
+        <button class="btn" id="addBtn">Add Entry</button>
+        <button class="btn" id="exportBtn">Export JSON</button>
+        <button class="btn" id="copyAllBtn">Copy Visible</button>
+        <button class="btn" id="printBtn">Print</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="desc"><span id="resultCount">0</span> results</div>
+      <div id="grid" class="grid" aria-live="polite"></div>
+      <div id="empty" class="empty" hidden>No matches. Adjust filters or clear search.</div>
+    </main>
+  </div>
+
+  <template id="cardTpl">
+    <article class="card">
+      <header>
+        <h3></h3>
+        <button class="btn" data-action="pin">Pin</button>
+        <button class="btn" data-action="copy">Copy</button>
+      </header>
+      <div class="tags"></div>
+      <div class="content"></div>
+    </article>
+  </template>
+
+  <!-- Add Entry Modal -->
+  <dialog id="addDialog" style="border:1px solid var(--border); border-radius:16px; padding:0; width:min(820px,96vw); background:rgba(17,24,39,.98)">
+    <form method="dialog" id="addForm">
+      <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border)"><strong>Add Entry</strong><button class="btn" value="close">Close</button></header>
+      <div style="padding:16px; display:grid; gap:10px">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+          <label style="display:grid; gap:6px">Title<input id="f_title" required class="border rounded px-3 py-2" placeholder="e.g., Amitriptyline (CYP2C19 IM)"></label>
+          <label style="display:grid; gap:6px">Drug<input id="f_drug" class="border rounded px-3 py-2" placeholder="e.g., Amitriptyline"></label>
+          <label style="display:grid; gap:6px">Genes (comma)<input id="f_genes" class="border rounded px-3 py-2" placeholder="e.g., CYP2C19"></label>
+          <label style="display:grid; gap:6px">Sections (comma)<input id="f_sections" class="border rounded px-3 py-2" placeholder="Treatment, Comments"></label>
+          <label style="grid-column:1/-1; display:grid; gap:6px">Tags (comma)<input id="f_tags" class="border rounded px-3 py-2" placeholder="Add 'Manual' to mark source"></label>
+        </div>
+        <fieldset style="border:1px dashed var(--border); border-radius:12px; padding:12px">
+          <legend>Blocks</legend>
+          <div id="blocksWrap" style="display:grid; gap:10px"></div>
+          <button type="button" class="btn" id="addBlockBtn">+ Add Block</button>
+        </fieldset>
+        <div style="display:flex; gap:10px; justify-content:flex-end"><button class="btn" id="saveEntryBtn">Save</button></div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Paste Import Modal -->
+  <dialog id="pasteDialog" style="border:1px solid var(--border); border-radius:16px; padding:0; width:min(980px,96vw); background:rgba(17,24,39,.98)">
+    <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border)"><strong>Paste from Word</strong><button class="btn" value="close" id="closePaste">Close</button></header>
+    <div style="padding:16px">
+      <p class="desc">Paste the full text from Word. Use consistent headings like “Amitriptyline (CYP2C19 IM)”. Then click <em>Preview</em>.</p>
+      <textarea id="pasteArea" placeholder="Paste your content here…"></textarea>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px">
+        <button class="btn" id="previewPasteBtn">Preview</button>
+      </div>
+      <div id="importPreview" class="grid" style="max-height:42vh; overflow:auto; margin-top:10px"></div>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px">
+        <button class="btn" id="commitImportBtn">Commit Import</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script>
+    // ---------------- Local storage ----------------
+    const LS_KEY='PGX_DATA';
+    function load(){ try{const r=localStorage.getItem(LS_KEY); if(r) return JSON.parse(r);}catch(e){} return []; }
+    function save(data){ localStorage.setItem(LS_KEY, JSON.stringify(data)); }
+
+    // ---------------- Data & state ----------------
+    let DATA = load(); // array of {id,title,drug,genes[],sections[],tags[],blocks[],pinned?}
+    const state = {
+      q: '',
+      phenotype: new Set(),     // IM, PM, UM, RM, URM, NM, EM
+      classes: new Set(),       // SSRI, TCA, Statin, etc.
+      source: new Set(),        // Imported, Manual
+      action: new Set(),        // Dose Adjustment, Monitoring, No Actionable Results, Elevated Exposure
+      pinnedOnly: false,
+    };
+
+    // Known phenotype tokens and classes
+    const PHENOTYPES = ['IM','PM','UM','RM','URM','NM','EM'];
+    const CLASSES = ['SSRI','TCA','Statin','Anticoagulant','Antiplatelet','Opioid','Immunosuppressant','Xanthine Oxidase Inhibitor','Benzodiazepine'];
+    const ACTION_TAGS = ['Dose Adjustment','Monitoring','No Actionable Results','Elevated Exposure'];
+    const SOURCES = ['Imported','Manual'];
+
+    // Optional helper to auto-tag classes on import (best-effort)
+    const DRUG_CLASS = {
+      'Amitriptyline':['TCA'], 'Nortriptyline':['TCA'],
+      'Citalopram':['SSRI'], 'Escitalopram':['SSRI'], 'Paroxetine':['SSRI'], 'Sertraline':['SSRI'], 'Fluoxetine':['SSRI'],
+      'Simvastatin':['Statin'], 'Atorvastatin':['Statin'], 'Rosuvastatin':['Statin'], 'Pravastatin':['Statin'],
+      'Clopidogrel':['Antiplatelet'], 'Prasugrel':['Antiplatelet'], 'Ticagrelor':['Antiplatelet'],
+      'Warfarin':['Anticoagulant'], 'Apixaban':['Anticoagulant'], 'Rivaroxaban':['Anticoagulant'], 'Dabigatran':['Anticoagulant'],
+      'Codeine':['Opioid'], 'Tramadol':['Opioid'], 'Hydrocodone':['Opioid'], 'Oxycodone':['Opioid'],
+      'Tacrolimus':['Immunosuppressant'], 'Cyclosporine':['Immunosuppressant'],
+      'Allopurinol':['Xanthine Oxidase Inhibitor'], 'Alprazolam':['Benzodiazepine']
+    };
+
+    // ---------------- Elements ----------------
+    const $q = document.getElementById('q');
+    const $grid = document.getElementById('grid');
+    const $empty = document.getElementById('empty');
+    const $resultCount = document.getElementById('resultCount');
+
+    const $phenotypeChips = document.getElementById('phenotypeChips');
+    const $classChips = document.getElementById('classChips');
+    const $sourceChips = document.getElementById('sourceChips');
+    const $actionChips = document.getElementById('actionChips');
+    const $pinnedChip = document.getElementById('pinnedChip');
+
+    // ---------------- UI helpers ----------------
+    function chip(text, onClick){
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.textContent = text;
+      b.addEventListener('click', () => onClick(b));
+      return b;
+    }
+    function setChipActive(el, active){
+      el.classList.toggle('active', !!active);
+    }
+    function toast(msg){
+      const t=document.createElement('div');
+      t.textContent=msg;
+      t.style.position='fixed'; t.style.bottom='20px'; t.style.right='20px';
+      t.style.padding='10px 12px'; t.style.background='rgba(2,6,23,.95)'; t.style.border='1px solid var(--border)';
+      t.style.borderRadius='10px'; t.style.zIndex=9999; t.style.fontSize='13px';
+      document.body.appendChild(t); setTimeout(()=>t.remove(),1600);
+    }
+
+    // ---------------- Filters ----------------
+    function buildFilters(){
+      // Phenotype
+      PHENOTYPES.forEach(p=>{
+        const el = chip(p, (b)=>{ if(state.phenotype.has(p)) state.phenotype.delete(p); else state.phenotype.add(p); setChipActive(b, state.phenotype.has(p)); render(); });
+        $phenotypeChips.appendChild(el);
+      });
+      // Class
+      CLASSES.forEach(c=>{
+        const el = chip(c, (b)=>{ if(state.classes.has(c)) state.classes.delete(c); else state.classes.add(c); setChipActive(b, state.classes.has(c)); render(); });
+        $classChips.appendChild(el);
+      });
+      // Source
+      SOURCES.forEach(s=>{
+        const el = chip(s, (b)=>{ if(state.source.has(s)) state.source.delete(s); else state.source.add(s); setChipActive(b, state.source.has(s)); render(); });
+        $sourceChips.appendChild(el);
+      });
+      // Actionability
+      ACTION_TAGS.forEach(a=>{
+        const el = chip(a, (b)=>{ if(state.action.has(a)) state.action.delete(a); else state.action.add(a); setChipActive(b, state.action.has(a)); render(); });
+        $actionChips.appendChild(el);
+      });
+      // Pinned
+      $pinnedChip.addEventListener('click', ()=>{
+        state.pinnedOnly = !state.pinnedOnly; setChipActive($pinnedChip, state.pinnedOnly); render();
+      });
+      // Clear filters
+      document.getElementById('clearFilters').addEventListener('click', ()=>{
+        state.phenotype.clear(); state.classes.clear(); state.source.clear(); state.action.clear(); state.pinnedOnly=false;
+        [...document.querySelectorAll('.chip.active')].forEach(c=>c.classList.remove('active')); render();
+      });
+    }
+
+    function matches(entry){
+      // Pinned
+      if(state.pinnedOnly && !entry.pinned) return false;
+
+      // Phenotype (look in tags)
+      if(state.phenotype.size){
+        const has = [...state.phenotype].some(p => entry.tags && entry.tags.includes(p));
+        if(!has) return false;
+      }
+
+      // Drug class (look in tags)
+      if(state.classes.size){
+        const has = [...state.classes].some(c => entry.tags && entry.tags.includes(c));
+        if(!has) return false;
+      }
+
+      // Source (Imported/Manual; look in tags)
+      if(state.source.size){
+        const has = [...state.source].some(s => entry.tags && entry.tags.includes(s));
+        if(!has) return false;
+      }
+
+      // Actionability (look in tags)
+      if(state.action.size){
+        const has = [...state.action].some(a => entry.tags && entry.tags.includes(a));
+        if(!has) return false;
+      }
+
+      // Text search
+      if(state.q){
+        const q = state.q.toLowerCase();
+        const blob = [
+          entry.title || '',
+          entry.drug || '',
+          (entry.genes||[]).join(' '),
+          (entry.sections||[]).join(' '),
+          (entry.tags||[]).join(' '),
+          (entry.blocks||[]).map(b => (b.label||'') + ' ' + (b.html||'').replace(/<[^>]+>/g,' ')).join(' ')
+        ].join(' ').toLowerCase();
+        if(!blob.includes(q)) return false;
+      }
+      return true;
+    }
+
+    // ---------------- Render ----------------
+    function render(){
+      $grid.innerHTML = '';
+      const list = DATA.filter(matches);
+      $resultCount.textContent = list.length;
+      $empty.hidden = list.length > 0;
+
+      const tpl = document.getElementById('cardTpl');
+      list.forEach(item=>{
+        const node = tpl.content.firstElementChild.cloneNode(true);
+        node.querySelector('h3').textContent = item.title || '(untitled)';
+
+        // Tags
+        const $tags = node.querySelector('.tags');
+        const tags = []
+          .concat(item.tags||[])
+          .concat(item.genes||[]);
+        // add drug badge first if present
+        if(item.drug){
+          const d=document.createElement('span'); d.className='tag badge'; d.textContent=item.drug; $tags.appendChild(d);
+        }
+        tags.forEach(t=>{ const el=document.createElement('span'); el.className='tag'; el.textContent=t; $tags.appendChild(el); });
+        if(item.pinned){ const el=document.createElement('span'); el.className='tag'; el.textContent='Pinned'; $tags.appendChild(el); }
+
+        // Content
+        const $c = node.querySelector('.content');
+        (item.blocks||[]).forEach(b=>{
+          const sec=document.createElement('section');
+          const h=document.createElement('h4'); h.textContent=b.label || 'Details';
+          const div=document.createElement('div'); div.innerHTML=b.html || '';
+          sec.appendChild(h); sec.appendChild(div);
+          $c.appendChild(sec);
+        });
+
+        // Buttons
+        const pinBtn = node.querySelector('[data-action="pin"]');
+        pinBtn.textContent = item.pinned ? 'Unpin' : 'Pin';
+        pinBtn.addEventListener('click', ()=>{
+          item.pinned = !item.pinned; save(DATA); render();
+        });
+
+        const copyBtn = node.querySelector('[data-action="copy"]');
+        copyBtn.addEventListener('click', async ()=>{
+          const txt = [
+            '## ' + (item.title||''),
+            ...Array.from(node.querySelectorAll('.content section')).map(s=>{
+              const h = s.querySelector('h4')?.innerText || '';
+              const d = s.querySelector('div')?.innerText || '';
+              return (h? h+'\n' : '') + d;
+            })
+          ].join('\n\n');
+          await navigator.clipboard.writeText(txt.trim());
+          toast('Copied card');
+        });
+
+        $grid.appendChild(node);
+      });
+    }
+
+    // ---------------- Paste importer ----------------
+    const pasteDialog=document.getElementById('pasteDialog');
+    const importPreview=document.getElementById('importPreview');
+    let importBuffer = [];
+
+    document.getElementById('pasteBtn').addEventListener('click', ()=>{
+      importPreview.innerHTML=''; document.getElementById('pasteArea').value=''; pasteDialog.showModal();
+    });
+    document.getElementById('closePaste').addEventListener('click', ()=>pasteDialog.close());
+    document.getElementById('previewPasteBtn').addEventListener('click', ()=>{
+      const text=document.getElementById('pasteArea').value||'';
+      if(!text.trim()){ toast('Nothing pasted'); return; }
+      importBuffer = parseTextToEntries(text);
+      showImportPreview(importBuffer);
+    });
+    document.getElementById('commitImportBtn').addEventListener('click', ()=>{
+      if(!importBuffer.length){ toast('Nothing to import'); return; }
+      DATA = DATA.concat(importBuffer);
+      save(DATA); render(); pasteDialog.close(); toast('Import complete');
+    });
+
+    function showImportPreview(list){
+      importPreview.innerHTML='';
+      const tpl=document.getElementById('cardTpl');
+      list.forEach(item=>{
+        const node=tpl.content.firstElementChild.cloneNode(true);
+        node.querySelector('h3').textContent=item.title;
+        const $tags=node.querySelector('.tags');
+        if(item.drug){ const d=document.createElement('span'); d.className='tag badge'; d.textContent=item.drug; $tags.appendChild(d); }
+        (item.tags||[]).concat(item.genes||[]).forEach(t=>{ const s=document.createElement('span'); s.className='tag'; s.textContent=t; $tags.appendChild(s); });
+        const $c=node.querySelector('.content');
+        (item.blocks||[]).forEach(b=>{ const sec=document.createElement('section'); const h=document.createElement('h4'); h.textContent=b.label||'Details'; const div=document.createElement('div'); div.innerHTML=b.html||''; sec.appendChild(h); sec.appendChild(div); $c.appendChild(sec); });
+        // hide per-card controls in preview
+        node.querySelector('[data-action="pin"]').remove();
+        node.querySelector('[data-action="copy"]').remove();
+        importPreview.appendChild(node);
+      });
+    }
+
+    // Recognizes headings like "Drug (CYP2C19 IM)" or "Drug (CYP2D6 PM/IM)"
+    function parseTextToEntries(text){
+      const raw = text.replace(/\u00A0/g,' ').split(/\r?\n/).map(s=>s.trim());
+      const lines = raw.filter(Boolean);
+      const HEAD_RE = /^([A-Z][A-Za-z0-9\-\/ ]+?)\s*\(([^)]+)\)\s*$/;
+      const phenotypeTokens = new Set(PHENOTYPES);
+
+      function extract(inner){
+        const genes = (inner.match(/[A-Z]{3,6}[0-9]?[A-Z0-9]*/g) || []).filter(tok => !phenotypeTokens.has(tok));
+        const phenos = (inner.match(/\b(IM|PM|UM|RM|URM|NM|EM)\b/g) || []);
+        return { genes: Array.from(new Set(genes)), phenotype: phenos.join('/') || null };
+      }
+
+      const entries = [];
+      for(let i=0;i<lines.length;i++){
+        const m = lines[i].match(HEAD_RE);
+        if(m){
+          const drug = m[1].trim();
+          const inner = m[2].trim();
+          const {genes, phenotype} = extract(inner);
+
+          // collect paragraphs until next heading
+          let j=i+1; const buf=[];
+          while(j<lines.length && !HEAD_RE.test(lines[j])){ buf.push(lines[j++]); }
+
+          // build tags
+          const tags = ['Imported'];
+          if(phenotype) tags.push(phenotype);
+          // add class tags if known (handle "Citalopram/Escitalopram")
+          const drugNames = drug.split('/').map(s=>s.trim());
+          const classSet = new Set();
+          drugNames.forEach(dn => (DRUG_CLASS[dn]||[]).forEach(c=>classSet.add(c)));
+          tags.push(...classSet);
+
+          const html = '<p>'+buf.join(' </p><p> ')+'</p>';
+          const title = `${drug} (${inner})`;
+          entries.push({
+            id: 'drug_'+Math.random().toString(36).slice(2),
+            title, drug, genes,
+            sections: ['Treatment'],
+            tags,
+            blocks: [{label:'Summary', html}],
+            pinned: false
+          });
+          i = j-1;
+        }
+      }
+      return entries;
+    }
+
+    // ---------------- Add Entry ----------------
+    const addDialog=document.getElementById('addDialog');
+    const blocksWrap=document.getElementById('blocksWrap');
+
+    function addBlockUI(label='', html=''){
+      const wrap=document.createElement('div');
+      wrap.style.display='grid'; wrap.style.gap='6px';
+      wrap.innerHTML = `
+        <div style="display:grid; grid-template-columns:1fr 80px; gap:8px; align-items:end">
+          <label style="display:grid; gap:6px">Block Label
+            <input class="border rounded px-3 py-2 blk-label" value="${label.replace(/"/g,'&quot;')}">
+          </label>
+          <button type="button" class="btn remove">Remove</button>
+        </div>
+        <label style="display:grid; gap:6px">Block HTML
+          <textarea class="border rounded px-3 py-2 blk-html" rows="4">${html.replace(/</g,'&lt;')}</textarea>
+        </label>`;
+      wrap.querySelector('.remove').addEventListener('click', ()=>wrap.remove());
+      blocksWrap.appendChild(wrap);
+    }
+
+    document.getElementById('addBlockBtn').addEventListener('click', ()=> addBlockUI('Clinical Note','<p>…</p>'));
+    document.getElementById('addBtn').addEventListener('click', ()=>{ blocksWrap.innerHTML=''; addBlockUI(); addDialog.showModal(); });
+
+    document.getElementById('saveEntryBtn').addEventListener('click', (e)=>{
+      e.preventDefault();
+      const entry = {
+        id: 'id_'+Math.random().toString(36).slice(2),
+        title: document.getElementById('f_title').value.trim(),
+        drug: document.getElementById('f_drug').value.trim() || null,
+        genes: document.getElementById('f_genes').value.split(',').map(s=>s.trim()).filter(Boolean),
+        sections: document.getElementById('f_sections').value.split(',').map(s=>s.trim()).filter(Boolean),
+        tags: document.getElementById('f_tags').value.split(',').map(s=>s.trim()).filter(Boolean),
+        blocks: Array.from(document.querySelectorAll('#blocksWrap > div')).map(w=>({
+          label: w.querySelector('.blk-label').value.trim(),
+          html: w.querySelector('.blk-html').value.replace(/&lt;/g,'<')
+        })),
+        pinned: false
+      };
+      if(!entry.title){ toast('Title is required'); return; }
+      if(!entry.blocks.length){ toast('Add at least one block'); return; }
+      if(!entry.tags.includes('Manual')) entry.tags.unshift('Manual');
+      DATA.push(entry); save(DATA); render(); addDialog.close(); toast('Entry saved');
+    });
+
+    // ---------------- Utilities ----------------
+    document.getElementById('exportBtn').addEventListener('click', ()=>{
+      const blob=new Blob([JSON.stringify(DATA,null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob);
+      const a=Object.assign(document.createElement('a'),{href:url,download:'pgx_consult_kb.json'});
+      a.click(); URL.revokeObjectURL(url);
+    });
+    document.getElementById('copyAllBtn').addEventListener('click', async ()=>{
+      const txt=Array.from(document.querySelectorAll('#grid .card')).map(card=>{
+        const title=card.querySelector('h3')?.innerText || '';
+        const blocks=Array.from(card.querySelectorAll('.content section')).map(s=>{
+          const h=s.querySelector('h4')?.innerText || '';
+          const d=s.querySelector('div')?.innerText || '';
+          return (h? h+'\n':'') + d;
+        }).join('\n\n');
+        return '## ' + title + '\n\n' + blocks;
+      }).join('\n\n---\n\n');
+      await navigator.clipboard.writeText(txt.trim());
+      toast('Copied visible');
+    });
+    document.getElementById('printBtn').addEventListener('click', ()=>window.print());
+
+    // Search
+    $q.addEventListener('input', (e)=>{ state.q = e.target.value.trim(); render(); });
+    document.getElementById('clearSearch').addEventListener('click', ()=>{ $q.value=''; state.q=''; render(); });
+
+    // Init
+    buildFilters();
+    render();
+  </script>
+</body>
+</html>
