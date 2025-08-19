@@ -3,20 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PGx Consult KR — Filters + Paste Import</title>
+  <title>PGx Consult KR — Cards + Code→Drug→Variant + Note Composer</title>
   <style>
-    :root{ --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#38bdf8; --border:#1e293b; }
+    :root{ --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#38bdf8; --accent2:#22d3ee; --border:#1e293b; }
     *{box-sizing:border-box}
     body{margin:0; font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu; color:var(--text); background:linear-gradient(180deg,#0b1222,var(--bg));}
     .app{display:grid; grid-template-columns:300px 1fr; min-height:100vh}
-    .sidebar{padding:18px; border-right:1px solid var(--border); background:rgba(17,24,39,.66); backdrop-filter: blur(6px);}
+    .sidebar{padding:18px; border-right:1px solid var(--border); background:rgba(17,24,39,.66); backdrop-filter: blur(6px);}  
     .main{padding:24px}
     h1{margin:0 0 14px; font-size:20px}
     .desc{color:var(--muted); font-size:13px; margin-bottom:12px}
 
     .search{display:flex; gap:8px; margin-bottom:10px}
-    .search input{flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#0b1222; color:var(--text)}
-    .btn{border:1px solid var(--border); background:#0d1322; color:var(--text); padding:8px 10px; border-radius:10px; cursor:pointer}
+    .search input{flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#0b1222; color:#fff}
+    .btn{border:1px solid var(--border); background:#0d1322; color:#fff; padding:8px 10px; border-radius:10px; cursor:pointer}
     .btn:hover{border-color:#334155}
 
     .toolbar{display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap}
@@ -27,6 +27,9 @@
     .chip{padding:6px 10px; border-radius:999px; border:1px solid var(--border); background:#0b1222; color:#cbd5e1; cursor:pointer; font-size:12px}
     .chip.active{background:var(--accent); color:#0b1222; border-color:transparent}
     .right{margin-left:auto}
+
+    .view-toggle{display:flex; gap:8px; margin-bottom:8px}
+    .view-toggle .btn.active{background:linear-gradient(90deg,var(--accent),var(--accent2)); color:#0b1222; border-color:transparent}
 
     .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:14px}
     .card{border:1px solid var(--border); border-radius:16px; overflow:hidden; background:rgba(17,24,39,.6)}
@@ -42,13 +45,32 @@
     dialog::backdrop{background:rgba(0,0,0,.35)}
     textarea{width:100%; min-height:40vh; background:#0b1222; color:#e5e7eb; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
     @media (max-width:860px){.app{grid-template-columns:1fr}.sidebar{position:sticky; top:0; z-index:10}}
+
+    /* Code→Drug→Variant styles */
+    details.variant{border-top:1px dashed var(--border)}
+    details.variant > summary{list-style:none; cursor:pointer; padding:10px 14px; display:flex; align-items:center; justify-content:space-between}
+    details.variant > summary::-webkit-details-marker{display:none}
+    .variant-meta{display:flex; align-items:center; gap:8px}
+    .code-header{display:flex; align-items:center; gap:10px; padding:6px 8px; border:1px solid var(--border); border-radius:12px; background:#0b1222;}
+    .code-label{font-weight:700}
+
+    /* Composer */
+    .hint{font-size:12px; color:#cbd5e1}
+    .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+    .kbd{font-family:ui-monospace,Menlo,monospace; background:#0b1328; border:1px solid var(--border); padding:2px 6px; border-radius:6px; color:#c7d2fe}
+    .palette{border:1px solid var(--border); border-radius:14px; padding:10px; background:#0b1222;}
+    .palette input{width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:#0b1328; color:#fff}
+    .results{max-height:42vh; overflow:auto; display:grid; gap:8px; margin-top:10px}
+    .res{border:1px solid var(--border); border-radius:12px; padding:10px; background:#0b1328; display:grid; gap:6px}
+    .res .meta{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+    .res .meta .tag{background:#0a1430; color:#cbd5e1}
   </style>
 </head>
 <body>
   <div class="app">
     <aside class="sidebar">
       <h1>PGx Consult KR</h1>
-      <div class="desc">Paste your Word content and filter by phenotype, class, source, actionability, and pinned. All data is stored locally in your browser.</div>
+      <div class="desc">Paste your Word content and filter by phenotype, class, source, actionability, and pinned. Switch to the <strong>Code</strong> view to browse one code → many drugs → variants. All data is stored locally.</div>
 
       <div class="search">
         <input id="q" placeholder="Search by drug, gene, phenotype, text…">
@@ -78,16 +100,27 @@
             <button class="chip right" id="clearFilters">Clear filters</button>
           </div>
         </div>
+        <!-- Visible only in Code view -->
+        <div class="filter-group" id="codeGroup" style="display:none">
+          <div class="filter-title">Codes</div>
+          <div class="chiplist" id="codeChips"></div>
+        </div>
       </div>
 
       <div class="desc">Utilities</div>
       <div class="toolbar">
+        <div class="view-toggle">
+          <button class="btn active" id="viewCards">Cards</button>
+          <button class="btn" id="viewCode">Code → Drug → Variant</button>
+        </div>
+        <button class="btn" id="composeBtn">Write Note</button>
         <button class="btn" id="pasteBtn">Paste from Word</button>
         <button class="btn" id="addBtn">Add Entry</button>
         <button class="btn" id="exportBtn">Export JSON</button>
         <button class="btn" id="copyAllBtn">Copy Visible</button>
         <button class="btn" id="printBtn">Print</button>
       </div>
+      <div class="hint">Tip: In the composer, press <span class="kbd">Ctrl/Cmd</span>+<span class="kbd">K</span> to insert, or type <span class="kbd">;alias</span> then space/Enter to auto-expand.</div>
     </aside>
 
     <main class="main">
@@ -101,6 +134,7 @@
     <article class="card">
       <header>
         <h3></h3>
+        <button class="btn" data-action="alias">Alias</button>
         <button class="btn" data-action="pin">Pin</button>
         <button class="btn" data-action="copy">Copy</button>
       </header>
@@ -110,23 +144,29 @@
   </template>
 
   <!-- Add Entry Modal -->
-  <dialog id="addDialog" style="border:1px solid var(--border); border-radius:16px; padding:0; width:min(820px,96vw); background:rgba(17,24,39,.98)">
+  <dialog id="addDialog" style="border:1px solid var(--border); border-radius:16px; padding:0; width:min(900px,96vw); background:rgba(17,24,39,.98)">
     <form method="dialog" id="addForm">
       <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border)"><strong>Add Entry</strong><button class="btn" value="close">Close</button></header>
       <div style="padding:16px; display:grid; gap:10px">
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
-          <label style="display:grid; gap:6px">Title<input id="f_title" required class="border rounded px-3 py-2" placeholder="e.g., Amitriptyline (CYP2C19 IM)"></label>
-          <label style="display:grid; gap:6px">Drug<input id="f_drug" class="border rounded px-3 py-2" placeholder="e.g., Amitriptyline"></label>
-          <label style="display:grid; gap:6px">Genes (comma)<input id="f_genes" class="border rounded px-3 py-2" placeholder="e.g., CYP2C19"></label>
-          <label style="display:grid; gap:6px">Sections (comma)<input id="f_sections" class="border rounded px-3 py-2" placeholder="Treatment, Comments"></label>
-          <label style="grid-column:1/-1; display:grid; gap:6px">Tags (comma)<input id="f_tags" class="border rounded px-3 py-2" placeholder="Add 'Manual' to mark source"></label>
+          <label style="display:grid; gap:6px">Title<input id="f_title" required placeholder="e.g., Atomoxetine (poor CYP2D6 metabolizer)"></label>
+          <label style="display:grid; gap:6px">Drug<input id="f_drug" placeholder="e.g., Atomoxetine"></label>
+          <label style="display:grid; gap:6px">Genes (comma)<input id="f_genes" placeholder="e.g., CYP2D6"></label>
+          <label style="display:grid; gap:6px">Sections (comma)<input id="f_sections" placeholder="Treatment, Comments"></label>
+          <label style="grid-column:1/-1; display:grid; gap:6px">Tags (comma)<input id="f_tags" placeholder="Add 'Manual' to mark source"></label>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; border:1px dashed var(--border); padding:12px; border-radius:12px">
+          <label style="display:grid; gap:6px">Code ID<input id="f_code" placeholder="e.g., CYP2D6_PM"></label>
+          <label style="display:grid; gap:6px">Aliases (comma)<input id="f_aliases" placeholder="e.g., ato.pm, atom.pm"></label>
+          <label style="grid-column:1/-1; display:grid; gap:6px">Variant label<input id="f_vlabel" placeholder="e.g., poor CYP2D6 metabolizer *3/*4, *4/*4"></label>
+          <label style="grid-column:1/-1; display:grid; gap:6px">Variant tag<input id="f_vtag" placeholder="e.g., *3/*4; *4/*4; *5/*5"></label>
         </div>
         <fieldset style="border:1px dashed var(--border); border-radius:12px; padding:12px">
           <legend>Blocks</legend>
           <div id="blocksWrap" style="display:grid; gap:10px"></div>
           <button type="button" class="btn" id="addBlockBtn">+ Add Block</button>
         </fieldset>
-        <div style="display:flex; gap:10px; justify-content:flex-end"><button class="btn" id="saveEntryBtn">Save</button></div>
+        <div class="row" style="justify-content:flex-end"><button class="btn" id="saveEntryBtn">Save</button></div>
       </div>
     </form>
   </dialog>
@@ -135,7 +175,7 @@
   <dialog id="pasteDialog" style="border:1px solid var(--border); border-radius:16px; padding:0; width:min(980px,96vw); background:rgba(17,24,39,.98)">
     <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border)"><strong>Paste from Word</strong><button class="btn" value="close" id="closePaste">Close</button></header>
     <div style="padding:16px">
-      <p class="desc">Paste the full text from Word. Use consistent headings like “Amitriptyline (CYP2C19 IM)”. Then click <em>Preview</em>.</p>
+      <p class="desc">Paste the full text from Word. Use consistent headings like “Atomoxetine (poor CYP2D6 metabolizer *3/*4, *4/*4)” or “Amitriptyline (CYP2C19 IM)”. Then click <em>Preview</em>.</p>
       <textarea id="pasteArea" placeholder="Paste your content here…"></textarea>
       <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px">
         <button class="btn" id="previewPasteBtn">Preview</button>
@@ -147,6 +187,37 @@
     </div>
   </dialog>
 
+  <!-- Composer Modal (Note editor with shortcodes and palette) -->
+  <dialog id="composeDialog" style="border:1px solid var(--border); border-radius:16px; padding:0; width:min(980px,96vw); background:rgba(17,24,39,.98)">
+    <header style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border)">
+      <strong>Note Composer</strong>
+      <div class="hint">Insert: <span class="kbd">Ctrl/Cmd</span>+<span class="kbd">K</span> · Expand: type <span class="kbd">;alias</span> then Space/Enter</div>
+      <button class="btn" value="close" id="closeCompose">Close</button>
+    </header>
+    <div style="padding:16px; display:grid; gap:10px">
+      <div class="row">
+        <label>Default insertion
+          <select id="insMode" class="btn" style="padding:8px 10px">
+            <option value="summary">Summary only</option>
+            <option value="full">Header + all sections</option>
+          </select>
+        </label>
+        <button class="btn" id="openPalette">Insert (Ctrl/Cmd+K)</button>
+        <button class="btn" id="copyNote">Copy Note</button>
+      </div>
+      <textarea id="noteArea" placeholder="Start writing your note…&#10;&#10;Example: type ;ato.pm and press Space to expand."></textarea>
+    </div>
+  </dialog>
+
+  <!-- Command Palette (search and insert) -->
+  <dialog id="paletteDialog" style="border:1px solid var(--border); border-radius:16px; padding:12px; width:min(720px,96vw); background:rgba(17,24,39,.98)">
+    <div class="palette">
+      <input id="palSearch" placeholder="Search drug / variant / gene / code…" />
+      <div class="results" id="palResults"></div>
+      <div class="row" style="justify-content:flex-end; margin-top:8px"><button class="btn" id="palClose">Close</button></div>
+    </div>
+  </dialog>
+
   <script>
     // ---------------- Local storage ----------------
     const LS_KEY='PGX_DATA';
@@ -154,7 +225,8 @@
     function save(data){ localStorage.setItem(LS_KEY, JSON.stringify(data)); }
 
     // ---------------- Data & state ----------------
-    let DATA = load(); // array of {id,title,drug,genes[],sections[],tags[],blocks[],pinned?}
+    /** entry shape: {id,title,drug,genes[],sections[],tags[],blocks[],pinned?, codeId?, variantLabel?, variantTag?, aliases?:string[]} */
+    let DATA = load();
     const state = {
       q: '',
       phenotype: new Set(),     // IM, PM, UM, RM, URM, NM, EM
@@ -162,11 +234,13 @@
       source: new Set(),        // Imported, Manual
       action: new Set(),        // Dose Adjustment, Monitoring, No Actionable Results, Elevated Exposure
       pinnedOnly: false,
+      view: 'cards',            // 'cards' | 'code'
+      activeCode: null          // codeId when view==='code'
     };
 
     // Known phenotype tokens and classes
     const PHENOTYPES = ['IM','PM','UM','RM','URM','NM','EM'];
-    const CLASSES = ['SSRI','TCA','Statin','Anticoagulant','Antiplatelet','Opioid','Immunosuppressant','Xanthine Oxidase Inhibitor','Benzodiazepine'];
+    const CLASS_LIST = ['SSRI','TCA','Statin','Anticoagulant','Antiplatelet','Opioid','Immunosuppressant','Xanthine Oxidase Inhibitor','Benzodiazepine'];
     const ACTION_TAGS = ['Dose Adjustment','Monitoring','No Actionable Results','Elevated Exposure'];
     const SOURCES = ['Imported','Manual'];
 
@@ -179,7 +253,8 @@
       'Warfarin':['Anticoagulant'], 'Apixaban':['Anticoagulant'], 'Rivaroxaban':['Anticoagulant'], 'Dabigatran':['Anticoagulant'],
       'Codeine':['Opioid'], 'Tramadol':['Opioid'], 'Hydrocodone':['Opioid'], 'Oxycodone':['Opioid'],
       'Tacrolimus':['Immunosuppressant'], 'Cyclosporine':['Immunosuppressant'],
-      'Allopurinol':['Xanthine Oxidase Inhibitor'], 'Alprazolam':['Benzodiazepine']
+      'Allopurinol':['Xanthine Oxidase Inhibitor'], 'Alprazolam':['Benzodiazepine'],
+      'Atomoxetine':[]
     };
 
     // ---------------- Elements ----------------
@@ -194,6 +269,18 @@
     const $actionChips = document.getElementById('actionChips');
     const $pinnedChip = document.getElementById('pinnedChip');
 
+    const $viewCards = document.getElementById('viewCards');
+    const $viewCode  = document.getElementById('viewCode');
+    const $codeGroup = document.getElementById('codeGroup');
+    const $codeChips = document.getElementById('codeChips');
+
+    const composeDialog = document.getElementById('composeDialog');
+    const noteArea = document.getElementById('noteArea');
+    const insModeSel = document.getElementById('insMode');
+    const paletteDialog = document.getElementById('paletteDialog');
+    const palSearch = document.getElementById('palSearch');
+    const palResults = document.getElementById('palResults');
+
     // ---------------- UI helpers ----------------
     function chip(text, onClick){
       const b = document.createElement('button');
@@ -203,9 +290,7 @@
       b.addEventListener('click', () => onClick(b));
       return b;
     }
-    function setChipActive(el, active){
-      el.classList.toggle('active', !!active);
-    }
+    function setChipActive(el, active){ el.classList.toggle('active', !!active); }
     function toast(msg){
       const t=document.createElement('div');
       t.textContent=msg;
@@ -223,7 +308,7 @@
         $phenotypeChips.appendChild(el);
       });
       // Class
-      CLASSES.forEach(c=>{
+      CLASS_LIST.forEach(c=>{
         const el = chip(c, (b)=>{ if(state.classes.has(c)) state.classes.delete(c); else state.classes.add(c); setChipActive(b, state.classes.has(c)); render(); });
         $classChips.appendChild(el);
       });
@@ -238,9 +323,7 @@
         $actionChips.appendChild(el);
       });
       // Pinned
-      $pinnedChip.addEventListener('click', ()=>{
-        state.pinnedOnly = !state.pinnedOnly; setChipActive($pinnedChip, state.pinnedOnly); render();
-      });
+      $pinnedChip.addEventListener('click', ()=>{ state.pinnedOnly = !state.pinnedOnly; setChipActive($pinnedChip, state.pinnedOnly); render(); });
       // Clear filters
       document.getElementById('clearFilters').addEventListener('click', ()=>{
         state.phenotype.clear(); state.classes.clear(); state.source.clear(); state.action.clear(); state.pinnedOnly=false;
@@ -249,47 +332,85 @@
     }
 
     function matches(entry){
-      // Pinned
       if(state.pinnedOnly && !entry.pinned) return false;
-
       // Phenotype (look in tags)
       if(state.phenotype.size){
         const has = [...state.phenotype].some(p => entry.tags && entry.tags.includes(p));
         if(!has) return false;
       }
-
       // Drug class (look in tags)
       if(state.classes.size){
         const has = [...state.classes].some(c => entry.tags && entry.tags.includes(c));
         if(!has) return false;
       }
-
       // Source (Imported/Manual; look in tags)
       if(state.source.size){
         const has = [...state.source].some(s => entry.tags && entry.tags.includes(s));
         if(!has) return false;
       }
-
       // Actionability (look in tags)
       if(state.action.size){
         const has = [...state.action].some(a => entry.tags && entry.tags.includes(a));
         if(!has) return false;
       }
-
       // Text search
       if(state.q){
         const q = state.q.toLowerCase();
         const blob = [
-          entry.title || '',
-          entry.drug || '',
-          (entry.genes||[]).join(' '),
-          (entry.sections||[]).join(' '),
-          (entry.tags||[]).join(' '),
+          entry.title || '', entry.drug || '', (entry.genes||[]).join(' '), (entry.sections||[]).join(' '), (entry.tags||[]).join(' '),
+          entry.variantLabel || '', entry.variantTag || '', (entry.aliases||[]).join(' '),
           (entry.blocks||[]).map(b => (b.label||'') + ' ' + (b.html||'').replace(/<[^>]+>/g,' ')).join(' ')
         ].join(' ').toLowerCase();
         if(!blob.includes(q)) return false;
       }
       return true;
+    }
+
+    // ---------------- Derivation helpers ----------------
+    const PHENO_MAP = { poor:'PM', intermediate:'IM', rapid:'RM', ultrarapid:'UM', ultra:'UM', normal:'NM', extensive:'EM' };
+    function pickGene(entry){
+      if(entry.genes && entry.genes.length) return entry.genes[0];
+      const m = (entry.title||'').match(/\b([A-Z]{3,6}[0-9]?[A-Z0-9]?)\b/);
+      return m? m[1] : 'GENE';
+    }
+    function pickPhenotype(entry){
+      const fromTags = (entry.tags||[]).find(t=>PHENOTYPES.includes(t));
+      if(fromTags) return fromTags;
+      const t = (entry.title||'').toLowerCase();
+      for(const key of Object.keys(PHENO_MAP)){ if(t.includes(key)) return PHENO_MAP[key]; }
+      return 'UNK';
+    }
+    function deriveCodeId(entry){
+      if(entry.codeId) return entry.codeId;
+      const gene = pickGene(entry);
+      const pheno = pickPhenotype(entry);
+      return `${gene}_${pheno}`;
+    }
+    function codeLabelFromId(codeId){
+      const m = codeId.match(/^(.*)_([A-Z]+)$/);
+      if(!m) return codeId;
+      const gene=m[1]; const pheno=m[2];
+      const pretty = {IM:'Intermediate', PM:'Poor', UM:'Ultrarapid', RM:'Rapid', URM:'Ultra-Rapid', NM:'Normal', EM:'Extensive', UNK:'Unspecified'}[pheno]||pheno;
+      return `${gene} — ${pretty} metabolizer`;
+    }
+    function pickDrug(entry){
+      if(entry.drug) return entry.drug;
+      const m = (entry.title||'').match(/^([^\(]+)/);
+      return m? m[1].trim() : '(Unknown drug)';
+    }
+
+    // Build index: codeId -> {label, drugs: Map(drug -> [entries])}
+    function buildIndex(list){
+      const idx = new Map();
+      for(const e of list){
+        const codeId = deriveCodeId(e);
+        const drug = pickDrug(e);
+        if(!idx.has(codeId)) idx.set(codeId, { codeId, label: codeLabelFromId(codeId), drugs: new Map() });
+        const bucket = idx.get(codeId).drugs;
+        if(!bucket.has(drug)) bucket.set(drug, []);
+        bucket.get(drug).push(e);
+      }
+      return idx;
     }
 
     // ---------------- Render ----------------
@@ -299,6 +420,28 @@
       $resultCount.textContent = list.length;
       $empty.hidden = list.length > 0;
 
+      if(state.view === 'cards'){
+        $codeGroup.style.display = 'none';
+        $viewCards.classList.add('active');
+        $viewCode.classList.remove('active');
+        renderCardsView(list);
+      } else {
+        $viewCode.classList.add('active');
+        $viewCards.classList.remove('active');
+        const idx = buildIndex(list);
+        $codeChips.innerHTML = '';
+        const codes = [...idx.values()].sort((a,b)=>a.label.localeCompare(b.label));
+        codes.forEach(c=>{
+          const el = chip(c.label, (b)=>{ state.activeCode = c.codeId; [...$codeChips.children].forEach(x=>x.classList.remove('active')); b.classList.add('active'); render(); });
+          if(!state.activeCode) state.activeCode = c.codeId;
+          if(state.activeCode === c.codeId) el.classList.add('active');
+          $codeChips.appendChild(el);
+        });
+        $codeGroup.style.display = codes.length ? 'block' : 'none';
+        renderCodeView(idx, state.activeCode);
+      }
+    }
+    function renderCardsView(list){
       const tpl = document.getElementById('cardTpl');
       list.forEach(item=>{
         const node = tpl.content.firstElementChild.cloneNode(true);
@@ -309,10 +452,10 @@
         const tags = []
           .concat(item.tags||[])
           .concat(item.genes||[]);
-        // add drug badge first if present
-        if(item.drug){
-          const d=document.createElement('span'); d.className='tag badge'; d.textContent=item.drug; $tags.appendChild(d);
-        }
+        if(item.drug){ const d=document.createElement('span'); d.className='tag badge'; d.textContent=item.drug; $tags.appendChild(d); }
+        const codeId = deriveCodeId(item);
+        const codeTag=document.createElement('span'); codeTag.className='tag'; codeTag.textContent=codeId; $tags.appendChild(codeTag);
+        (item.aliases||[]).forEach(a=>{ const el=document.createElement('span'); el.className='tag'; el.textContent=';'+a; $tags.appendChild(el); });
         tags.forEach(t=>{ const el=document.createElement('span'); el.className='tag'; el.textContent=t; $tags.appendChild(el); });
         if(item.pinned){ const el=document.createElement('span'); el.className='tag'; el.textContent='Pinned'; $tags.appendChild(el); }
 
@@ -327,28 +470,108 @@
         });
 
         // Buttons
+        node.querySelector('[data-action="alias"]').addEventListener('click', ()=>{
+          const current=(item.aliases||[]).join(', ');
+          const val=prompt('Aliases (comma separated):', current);
+          if(val!==null){ item.aliases = val.split(',').map(s=>s.trim()).filter(Boolean); save(DATA); render(); }
+        });
         const pinBtn = node.querySelector('[data-action="pin"]');
         pinBtn.textContent = item.pinned ? 'Unpin' : 'Pin';
-        pinBtn.addEventListener('click', ()=>{
-          item.pinned = !item.pinned; save(DATA); render();
-        });
-
+        pinBtn.addEventListener('click', ()=>{ item.pinned = !item.pinned; save(DATA); render(); });
         const copyBtn = node.querySelector('[data-action="copy"]');
         copyBtn.addEventListener('click', async ()=>{
-          const txt = [
-            '## ' + (item.title||''),
-            ...Array.from(node.querySelectorAll('.content section')).map(s=>{
-              const h = s.querySelector('h4')?.innerText || '';
-              const d = s.querySelector('div')?.innerText || '';
-              return (h? h+'\n' : '') + d;
-            })
-          ].join('\n\n');
-          await navigator.clipboard.writeText(txt.trim());
+          await navigator.clipboard.writeText(compileEntryText(item, 'full'));
           toast('Copied card');
         });
 
         $grid.appendChild(node);
       });
+    }
+
+    function renderCodeView(index, activeCode){
+      $grid.innerHTML = '';
+      if(!activeCode || !index.has(activeCode)) { $empty.hidden=false; return; }
+      const nodeList = [];
+      const code = index.get(activeCode);
+      const tpl = document.getElementById('cardTpl');
+
+      // Header card for code context
+      const ctx = document.createElement('div');
+      ctx.className='card';
+      ctx.innerHTML = `<header><div class="code-header"><span class="code-label">${code.label}</span><span class="muted">(${code.codeId})</span></div></header>`;
+      nodeList.push(ctx);
+
+      // Drug cards, each with variants (entries)
+      for(const [drug, entries] of [...code.drugs.entries()].sort((a,b)=>a[0].localeCompare(b[0]))){
+        const node = tpl.content.firstElementChild.cloneNode(true);
+        node.querySelector('h3').textContent = drug;
+        // hide pin on aggregate; keep copy to copy all variants under this drug
+        node.querySelector('[data-action="pin"]').remove();
+        node.querySelector('[data-action="alias"]').remove();
+
+        // Tags row
+        const $tags = node.querySelector('.tags');
+        const badge=document.createElement('span'); badge.className='tag badge'; badge.textContent=`${entries.length} variant${entries.length!==1?'s':''}`; $tags.appendChild(badge);
+        const codeTag=document.createElement('span'); codeTag.className='tag'; codeTag.textContent=code.codeId; $tags.appendChild(codeTag);
+
+        // Content: each variant as a <details>
+        const $c = node.querySelector('.content'); $c.innerHTML='';
+        entries.forEach((e, idx)=>{
+          const det=document.createElement('details'); det.className='variant';
+          const sum=document.createElement('summary');
+          const meta=document.createElement('div'); meta.className='variant-meta';
+          const title=document.createElement('strong'); title.textContent = e.variantLabel || e.title || `Variant ${idx+1}`;
+          meta.appendChild(title);
+          if(e.variantTag){ const t=document.createElement('span'); t.className='tag'; t.textContent=e.variantTag; meta.appendChild(t); }
+          (e.aliases||[]).forEach(a=>{ const t=document.createElement('span'); t.className='tag'; t.textContent=';'+a; meta.appendChild(t); });
+          sum.appendChild(meta);
+          const hint=document.createElement('span'); hint.className='muted'; hint.textContent='Click to expand'; sum.appendChild(hint);
+
+          const blockWrap=document.createElement('div'); blockWrap.className='content';
+          (e.blocks||[]).forEach(b=>{
+            const sec=document.createElement('section');
+            const h=document.createElement('h4'); h.textContent=b.label||'Details';
+            const div=document.createElement('div'); div.innerHTML=b.html||'';
+            sec.appendChild(h); sec.appendChild(div); blockWrap.appendChild(sec);
+          });
+
+          const bar=document.createElement('div'); bar.style.display='flex'; bar.style.gap='8px'; bar.style.padding='10px 14px'; bar.style.borderTop='1px solid var(--border)'; bar.style.background='#0a1022';
+          const c1=document.createElement('button'); c1.className='btn'; c1.textContent='Copy text';
+          c1.onclick=async()=>{ await navigator.clipboard.writeText(compileEntryText(e, 'summary')); toast('Copied variant'); };
+          const c2=document.createElement('button'); c2.className='btn'; c2.textContent='Copy with header';
+          c2.onclick=async()=>{ await navigator.clipboard.writeText(compileEntryText(e, 'full')); toast('Copied variant'); };
+          const c3=document.createElement('button'); c3.className='btn'; c3.textContent='Insert into Note';
+          c3.onclick=()=>{ ensureComposerOpen(); insertIntoNote(e, insModeSel.value); };
+          bar.append(c1,c2,c3);
+
+          det.append(sum, blockWrap, bar);
+          $c.appendChild(det);
+        });
+
+        // Copy all variants under this drug
+        const copyBtn = node.querySelector('[data-action="copy"]');
+        copyBtn.addEventListener('click', async()=>{
+          const body=entries.map(e=>`### ${e.variantLabel || e.title}\n\n${compileEntryText(e, 'summary')}`).join('\n\n---\n\n');
+          await navigator.clipboard.writeText((`## ${drug} (${code.codeId})\n\n`+body).trim());
+          toast('Copied drug variants');
+        });
+
+        nodeList.push(node);
+      }
+      nodeList.forEach(n=>$grid.appendChild(n));
+      $empty.hidden = nodeList.length>0;
+    }
+
+    // ---------------- Text compilation for insertion/copy ----------------
+    function compileEntryText(entry, mode){
+      const header = `${codeLabelFromId(deriveCodeId(entry))} → ${pickDrug(entry)} → ${entry.variantLabel || entry.title}`;
+      const sections = (entry.blocks||[]).map(b=>{
+        const h=b.label? b.label+'\n' : '';
+        const d=(b.html||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+        return (h + d).trim();
+      }).filter(Boolean);
+      if(mode==='summary') return sections.join('\n\n');
+      return ['## '+header, ...sections].join('\n\n');
     }
 
     // ---------------- Paste importer ----------------
@@ -380,28 +603,37 @@
         node.querySelector('h3').textContent=item.title;
         const $tags=node.querySelector('.tags');
         if(item.drug){ const d=document.createElement('span'); d.className='tag badge'; d.textContent=item.drug; $tags.appendChild(d); }
+        const codeTag=document.createElement('span'); codeTag.className='tag'; codeTag.textContent=item.codeId || deriveCodeId(item); $tags.appendChild(codeTag);
         (item.tags||[]).concat(item.genes||[]).forEach(t=>{ const s=document.createElement('span'); s.className='tag'; s.textContent=t; $tags.appendChild(s); });
         const $c=node.querySelector('.content');
         (item.blocks||[]).forEach(b=>{ const sec=document.createElement('section'); const h=document.createElement('h4'); h.textContent=b.label||'Details'; const div=document.createElement('div'); div.innerHTML=b.html||''; sec.appendChild(h); sec.appendChild(div); $c.appendChild(sec); });
-        // hide per-card controls in preview
         node.querySelector('[data-action="pin"]').remove();
         node.querySelector('[data-action="copy"]').remove();
+        node.querySelector('[data-action="alias"]').remove();
         importPreview.appendChild(node);
       });
     }
 
-    // Recognizes headings like "Drug (CYP2C19 IM)" or "Drug (CYP2D6 PM/IM)"
+    // Recognizes headings like "Drug (CYP2C19 IM)" OR "Drug (poor CYP2D6 metabolizer *3/*4, *4/*4)"
     function parseTextToEntries(text){
       const raw = text.replace(/\u00A0/g,' ').split(/\r?\n/).map(s=>s.trim());
       const lines = raw.filter(Boolean);
       const HEAD_RE = /^([A-Z][A-Za-z0-9\-\/ ]+?)\s*\(([^)]+)\)\s*$/;
       const phenotypeTokens = new Set(PHENOTYPES);
+      const starAlleleRe = /(\*[0-9]+(?:\/\*[0-9]+)+)/g;
 
       function extract(inner){
         const genes = (inner.match(/[A-Z]{3,6}[0-9]?[A-Z0-9]*/g) || []).filter(tok => !phenotypeTokens.has(tok));
-        const phenos = (inner.match(/\b(IM|PM|UM|RM|URM|NM|EM)\b/g) || []);
-        return { genes: Array.from(new Set(genes)), phenotype: phenos.join('/') || null };
-      }
+        const phenosTok = (inner.match(/\b(IM|PM|UM|RM|URM|NM|EM)\b/g) || []);
+        let pheno = phenosTok[0] || null;
+        if(!pheno){
+          const lc = inner.toLowerCase();
+          for(const k in PHENO_MAP){ if(lc.includes(k)) { pheno = PHENO_MAP[k]; break; } }
+        }
+        const genoMatches = inner.match(starAlleleRe) || [];
+        const genoTag = genoMatches.join('; ');
+        return { genes: Array.from(new Set(genes)), phenotype: pheno, genotypeTag: genoTag };
+        }
 
       const entries = [];
       for(let i=0;i<lines.length;i++){
@@ -409,16 +641,12 @@
         if(m){
           const drug = m[1].trim();
           const inner = m[2].trim();
-          const {genes, phenotype} = extract(inner);
-
-          // collect paragraphs until next heading
+          const {genes, phenotype, genotypeTag} = extract(inner);
           let j=i+1; const buf=[];
           while(j<lines.length && !HEAD_RE.test(lines[j])){ buf.push(lines[j++]); }
 
-          // build tags
           const tags = ['Imported'];
           if(phenotype) tags.push(phenotype);
-          // add class tags if known (handle "Citalopram/Escitalopram")
           const drugNames = drug.split('/').map(s=>s.trim());
           const classSet = new Set();
           drugNames.forEach(dn => (DRUG_CLASS[dn]||[]).forEach(c=>classSet.add(c)));
@@ -426,13 +654,13 @@
 
           const html = '<p>'+buf.join(' </p><p> ')+'</p>';
           const title = `${drug} (${inner})`;
+          const codeGene = genes[0] || 'GENE';
+          const codeId = `${codeGene}_${phenotype||'UNK'}`;
           entries.push({
             id: 'drug_'+Math.random().toString(36).slice(2),
-            title, drug, genes,
-            sections: ['Treatment'],
-            tags,
-            blocks: [{label:'Summary', html}],
-            pinned: false
+            title, drug, genes, sections: ['Treatment'], tags,
+            blocks: [{label:'Summary', html}], pinned: false,
+            codeId: codeId, variantLabel: title, variantTag: genotypeTag || '', aliases: []
           });
           i = j-1;
         }
@@ -450,12 +678,12 @@
       wrap.innerHTML = `
         <div style="display:grid; grid-template-columns:1fr 80px; gap:8px; align-items:end">
           <label style="display:grid; gap:6px">Block Label
-            <input class="border rounded px-3 py-2 blk-label" value="${label.replace(/"/g,'&quot;')}">
+            <input class="blk-label" value="${label.replace(/"/g,'&quot;')}">
           </label>
           <button type="button" class="btn remove">Remove</button>
         </div>
         <label style="display:grid; gap:6px">Block HTML
-          <textarea class="border rounded px-3 py-2 blk-html" rows="4">${html.replace(/</g,'&lt;')}</textarea>
+          <textarea class="blk-html" rows="4">${html.replace(/</g,'&lt;')}</textarea>
         </label>`;
       wrap.querySelector('.remove').addEventListener('click', ()=>wrap.remove());
       blocksWrap.appendChild(wrap);
@@ -477,11 +705,17 @@
           label: w.querySelector('.blk-label').value.trim(),
           html: w.querySelector('.blk-html').value.replace(/&lt;/g,'<')
         })),
-        pinned: false
+        pinned: false,
+        codeId: document.getElementById('f_code').value.trim() || null,
+        variantLabel: document.getElementById('f_vlabel').value.trim() || null,
+        variantTag: document.getElementById('f_vtag').value.trim() || '',
+        aliases: document.getElementById('f_aliases').value.split(',').map(s=>s.trim()).filter(Boolean)
       };
       if(!entry.title){ toast('Title is required'); return; }
       if(!entry.blocks.length){ toast('Add at least one block'); return; }
       if(!entry.tags.includes('Manual')) entry.tags.unshift('Manual');
+      if(!entry.codeId) entry.codeId = deriveCodeId(entry);
+      if(!entry.variantLabel) entry.variantLabel = entry.title;
       DATA.push(entry); save(DATA); render(); addDialog.close(); toast('Entry saved');
     });
 
@@ -493,16 +727,34 @@
       a.click(); URL.revokeObjectURL(url);
     });
     document.getElementById('copyAllBtn').addEventListener('click', async ()=>{
-      const txt=Array.from(document.querySelectorAll('#grid .card')).map(card=>{
-        const title=card.querySelector('h3')?.innerText || '';
-        const blocks=Array.from(card.querySelectorAll('.content section')).map(s=>{
-          const h=s.querySelector('h4')?.innerText || '';
-          const d=s.querySelector('div')?.innerText || '';
-          return (h? h+'\n':'') + d;
-        }).join('\n\n');
-        return '## ' + title + '\n\n' + blocks;
-      }).join('\n\n---\n\n');
-      await navigator.clipboard.writeText(txt.trim());
+      if(state.view==='cards'){
+        const txt=Array.from(document.querySelectorAll('#grid .card')).map(card=>{
+          const title=card.querySelector('h3')?.innerText || '';
+          const blocks=Array.from(card.querySelectorAll('.content section')).map(s=>{
+            const h=s.querySelector('h4')?.innerText || '';
+            const d=s.querySelector('div')?.innerText || '';
+            return (h? h+'\n':'') + d;
+          }).join('\n\n');
+          return '## ' + title + '\n\n' + blocks;
+        }).join('\n\n---\n\n');
+        await navigator.clipboard.writeText(txt.trim());
+      } else {
+        const chunks=[];
+        const codeHdr=document.querySelector('.code-header .code-label')?.innerText||'';
+        const codeIdTxt='';
+        chunks.push(`# ${codeHdr} ${codeIdTxt}`.trim());
+        document.querySelectorAll('#grid .card').forEach((card, idx)=>{
+          if(idx===0) return;
+          const drug=card.querySelector('h3')?.innerText||'';
+          const body=[...card.querySelectorAll('details.variant')].map((d,i)=>{
+            const label=d.querySelector('summary strong')?.innerText||`Variant ${i+1}`;
+            const sections=[...d.querySelectorAll('section')].map(s=>{ const h=s.querySelector('h4')?.innerText||''; const v=s.querySelector('div')?.innerText||''; return (h? h+'\n':'')+v; }).join('\n\n');
+            return `### ${label}\n\n${sections}`;
+          }).join('\n\n');
+          chunks.push(`## ${drug}\n\n${body}`.trim());
+        });
+        await navigator.clipboard.writeText(chunks.join('\n\n---\n\n'));
+      }
       toast('Copied visible');
     });
     document.getElementById('printBtn').addEventListener('click', ()=>window.print());
@@ -511,7 +763,84 @@
     $q.addEventListener('input', (e)=>{ state.q = e.target.value.trim(); render(); });
     document.getElementById('clearSearch').addEventListener('click', ()=>{ $q.value=''; state.q=''; render(); });
 
-    // Init
+    // View toggle
+    document.getElementById('viewCards').addEventListener('click', ()=>{ state.view='cards'; state.activeCode=null; render(); });
+    document.getElementById('viewCode').addEventListener('click', ()=>{ state.view='code'; render(); });
+
+    // ---------------- Composer / Palette ----------------
+    function ensureComposerOpen(){ if(!composeDialog.open) composeDialog.showModal(); noteArea.focus(); }
+    document.getElementById('composeBtn').addEventListener('click', ()=>ensureComposerOpen());
+    document.getElementById('closeCompose').addEventListener('click', ()=>composeDialog.close());
+
+    document.getElementById('copyNote').addEventListener('click', async ()=>{ await navigator.clipboard.writeText(noteArea.value); toast('Note copied'); });
+    document.getElementById('openPalette').addEventListener('click', ()=>openPalette());
+
+    // Ctrl/Cmd+K to open palette when composer is open
+    document.addEventListener('keydown', (e)=>{
+      if(!composeDialog.open) return;
+      if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); openPalette(); }
+    });
+
+    function openPalette(){
+      palSearch.value=''; palResults.innerHTML=''; paletteDialog.showModal(); palSearch.focus();
+      renderPalResults('');
+    }
+    document.getElementById('palClose').addEventListener('click', ()=>paletteDialog.close());
+    palSearch.addEventListener('input', (e)=> renderPalResults(e.target.value.trim().toLowerCase()));
+
+    function renderPalResults(q){
+      palResults.innerHTML='';
+      const list = DATA.filter(e=>{
+        if(!q) return true;
+        const blob=[e.title||'', e.drug||'', (e.genes||[]).join(' '), e.codeId||'', e.variantLabel||'', e.variantTag||'', (e.aliases||[]).join(' ')].join(' ').toLowerCase();
+        return blob.includes(q);
+      }).slice(0,50);
+      list.forEach(e=>{
+        const row=document.createElement('div'); row.className='res';
+        const title=document.createElement('div'); title.textContent=e.variantLabel||e.title; row.appendChild(title);
+        const meta=document.createElement('div'); meta.className='meta';
+        const drug=document.createElement('span'); drug.className='tag'; drug.textContent=pickDrug(e); meta.appendChild(drug);
+        const code=document.createElement('span'); code.className='tag'; code.textContent=e.codeId||deriveCodeId(e); meta.appendChild(code);
+        (e.aliases||[]).forEach(a=>{ const s=document.createElement('span'); s.className='tag'; s.textContent=';'+a; meta.appendChild(s); });
+        if(e.variantTag){ const s=document.createElement('span'); s.className='tag'; s.textContent=e.variantTag; meta.appendChild(s); }
+        row.appendChild(meta);
+        const actions=document.createElement('div'); actions.className='row';
+        const b1=document.createElement('button'); b1.className='btn'; b1.textContent='Insert summary'; b1.onclick=()=>{ insertIntoNote(e,'summary'); paletteDialog.close(); };
+        const b2=document.createElement('button'); b2.className='btn'; b2.textContent='Insert full'; b2.onclick=()=>{ insertIntoNote(e,'full'); paletteDialog.close(); };
+        actions.append(b1,b2); row.appendChild(actions);
+        palResults.appendChild(row);
+      });
+    }
+
+    function insertAtCursor(textarea, text){
+      const start = textarea.selectionStart; const end = textarea.selectionEnd; const before = textarea.value.slice(0,start); const after = textarea.value.slice(end);
+      textarea.value = before + text + after; const pos = start + text.length; textarea.selectionStart = textarea.selectionEnd = pos; textarea.focus();
+    }
+
+    function insertIntoNote(entry, mode){ ensureComposerOpen(); const txt=compileEntryText(entry, mode==='full' ? 'full' : insModeSel.value); insertAtCursor(noteArea, (noteArea.value && !noteArea.value.endsWith('\n')? '\n\n':'') + txt + '\n\n'); }
+
+    // Simple alias expansion: type ";alias" then Space/Enter
+    noteArea.addEventListener('keydown', (e)=>{
+      if(e.key===' ' || e.key==='Enter'){
+        const expanded = tryExpandAlias();
+        if(expanded){ e.preventDefault(); insertAtCursor(noteArea, e.key==='Enter'?'\n':' '); }
+      }
+    });
+
+    function tryExpandAlias(){
+      const pos = noteArea.selectionStart; const text = noteArea.value.slice(0,pos);
+      const m = text.match(/(^|\s);([a-z0-9_\-.]{1,40})$/i);
+      if(!m) return false;
+      const alias = m[2].toLowerCase();
+      const entry = DATA.find(e => (e.aliases||[]).map(a=>a.toLowerCase()).includes(alias));
+      if(!entry) return false;
+      const start = pos - alias.length - 1; // includes leading ';'
+      noteArea.setRangeText(compileEntryText(entry, insModeSel.value), start, pos, 'end');
+      toast('Expanded '+alias);
+      return true;
+    }
+
+    // ---------------- Init ----------------
     buildFilters();
     render();
   </script>
